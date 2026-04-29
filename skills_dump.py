@@ -13,7 +13,7 @@ _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
-PLUGIN_VERSION = "0.1.0"
+PLUGIN_VERSION = "0.1.1"
 
 # Path-traversal defense: regex + segment scan in `_validate_name`.
 # Same shape as the Hermes plugin so the iOS adapter can reuse its

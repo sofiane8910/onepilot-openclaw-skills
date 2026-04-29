@@ -1,5 +1,5 @@
 name: onepilot-openclaw-skills
-version: 0.1.0
+version: 0.1.1
 description: Skill discovery surface for the Onepilot iOS app on OpenClaw hosts. Read-only — wraps `openclaw skills list/info/search --json` behind a stable, version-stamped envelope so iOS can move at its own pace independent of OpenClaw's CLI shape.
 author: Onepilot
 kind: standalone

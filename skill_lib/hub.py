@@ -35,6 +35,24 @@ from skill_lib.openclaw import run_openclaw
 # this is the secondary belt-and-braces.
 _MAX_FETCH = 2000
 
+# When the user hasn't typed a query, we still want to surface every
+# ClawHub skill in the marketplace. Problem: OpenClaw's
+# `skills search` CLI defaults the query to "*" when omitted, and
+# ClawHub's `/api/v1/search` endpoint treats "*" as a literal
+# substring — so an empty-query browse returns zero results.
+#
+# Workaround: probe with single-character vowel queries and union the
+# results. Every English skill name contains at least one vowel, so
+# this catches the entire ClawHub catalog. Each call hits OpenClaw's
+# in-process HTTP cache after the first, so 5 round-trips on a cold
+# search become free on subsequent pages.
+#
+# Long-term fix: OpenClaw should expose `listClawHubSkills`
+# (`/api/v1/skills`) as a CLI subcommand — see
+# `openclaw/src/infra/clawhub.ts:621`. Until then, this is the only
+# way to browse without typing.
+_BROWSE_PROBES = ("a", "e", "i", "o", "u")
+
 
 def _clamp_int(value: Any, lo: int, hi: int, default: int) -> int:
     try:
@@ -101,47 +119,65 @@ def browse(
     # first call and free thereafter.
     fetch_limit = _MAX_FETCH
 
-    argv = ["skills", "search", "--json", "--limit", str(fetch_limit)]
     if query:
-        argv.append(query)
+        # Single targeted search.
+        probes: tuple[str, ...] = (query,)
+    else:
+        # Empty-query browse: fan out across vowel probes (see
+        # `_BROWSE_PROBES` doc) and union by slug. Every skill name
+        # contains at least one of these letters in practice.
+        probes = _BROWSE_PROBES
 
-    result = run_openclaw(argv)
-    if not result.get("ok"):
-        return {
-            "plugin_version": plugin_version,
-            "items": [],
-            "page": page,
-            "total_pages": 1,
-            "total": 0,
-            "error": result.get("error", "unknown"),
-        }
+    aggregated: dict[str, dict[str, Any]] = {}
+    for probe in probes:
+        argv = ["skills", "search", "--json", "--limit", str(fetch_limit), probe]
+        result = run_openclaw(argv)
+        if not result.get("ok"):
+            # Bail on transport failure; surface the error class so the
+            # iOS view shows the retry button.
+            return {
+                "plugin_version": plugin_version,
+                "items": [],
+                "page": page,
+                "total_pages": 1,
+                "total": 0,
+                "error": result.get("error", "unknown"),
+            }
 
-    data = result["data"]
-    if not isinstance(data, dict):
-        return {
-            "plugin_version": plugin_version,
-            "items": [],
-            "page": page,
-            "total_pages": 1,
-            "total": 0,
-            "error": "unexpected_shape",
-        }
+        data = result["data"]
+        if not isinstance(data, dict):
+            return {
+                "plugin_version": plugin_version,
+                "items": [],
+                "page": page,
+                "total_pages": 1,
+                "total": 0,
+                "error": "unexpected_shape",
+            }
 
-    raw_results = data.get("results", [])
-    if not isinstance(raw_results, list):
-        raw_results = []
+        raw_results = data.get("results", [])
+        if not isinstance(raw_results, list):
+            raw_results = []
 
-    translated = [_translate_search_item(it) for it in raw_results]
-    # Drop empty-name rows so the iOS list never renders blank cards.
-    translated = [it for it in translated if it["name"]]
+        for raw in raw_results:
+            translated = _translate_search_item(raw)
+            slug = translated["name"]
+            if not slug or slug in aggregated:
+                continue
+            aggregated[slug] = translated
 
-    total = len(translated)
+    # Stable order: alphabetical by slug. Without this the page
+    # contents shift as `_BROWSE_PROBES` is reordered or as the
+    # backend's per-probe ordering drifts.
+    items = [aggregated[slug] for slug in sorted(aggregated.keys())]
+
+    total = len(items)
     total_pages = max(1, (total + page_size - 1) // page_size)
     if page > total_pages:
         page = total_pages
 
     start = (page - 1) * page_size
-    window = translated[start : start + page_size]
+    window = items[start : start + page_size]
 
     return {
         "plugin_version": plugin_version,

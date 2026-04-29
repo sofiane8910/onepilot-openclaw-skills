@@ -48,16 +48,21 @@ def test_translates_clawhub_search_to_ios_canonical(monkeypatch):
 
 
 def test_pagination_in_plugin(monkeypatch):
-    results = [{"slug": f"skill-{i}", "displayName": f"S{i}", "summary": f"sum {i}"} for i in range(25)]
+    # Zero-padded slugs so alphabetical sort matches numeric sort.
+    results = [
+        {"slug": f"skill-{i:02d}", "displayName": f"S{i}", "summary": f"sum {i}"}
+        for i in range(25)
+    ]
     _stub_run(monkeypatch, results)
 
-    page1 = hub_mod.browse(plugin_version="0.1.0", page=1, page_size=10)
-    page3 = hub_mod.browse(plugin_version="0.1.0", page=3, page_size=10)
+    # Pass a query so the plugin makes a single call (no vowel fan-out).
+    page1 = hub_mod.browse(plugin_version="0.1.0", page=1, page_size=10, query="skill")
+    page3 = hub_mod.browse(plugin_version="0.1.0", page=3, page_size=10, query="skill")
 
     assert page1["total"] == 25
     assert page1["total_pages"] == 3
     assert len(page1["items"]) == 10
-    assert page1["items"][0]["name"] == "skill-0"
+    assert page1["items"][0]["name"] == "skill-00"
 
     assert page3["page"] == 3
     assert len(page3["items"]) == 5  # tail
@@ -115,17 +120,64 @@ def test_query_arg_is_appended_when_nonempty(monkeypatch):
     assert seen["argv"][-1] == "calendar"
 
 
-def test_query_omitted_when_empty(monkeypatch):
-    seen: dict = {}
+def test_empty_query_fans_out_vowel_probes(monkeypatch):
+    """Empty query must run multiple search calls with single-vowel
+    probes, since OpenClaw's `skills search` (which calls ClawHub's
+    /api/v1/search with q=`*`) returns 0 hits when no query is given."""
+    calls: list[list[str]] = []
 
     def fake_run(argv, profile=None):
-        seen["argv"] = argv
+        calls.append(list(argv))
         return {"ok": True, "data": {"results": []}}
 
     monkeypatch.setattr(hub_mod, "run_openclaw", fake_run)
     hub_mod.browse(plugin_version="0.1.0", query="")
-    # No positional after `--limit <n>`.
-    assert seen["argv"][-2] == "--limit"
+
+    assert len(calls) == len(hub_mod._BROWSE_PROBES)
+    probes = {call[-1] for call in calls}
+    assert probes == set(hub_mod._BROWSE_PROBES)
+    # Each call still has the --limit argv shape.
+    for call in calls:
+        assert call[:5] == ["skills", "search", "--json", "--limit", str(hub_mod._MAX_FETCH)]
+
+
+def test_empty_query_dedupes_across_probes(monkeypatch):
+    """Same skill appearing in multiple probe results must surface once."""
+    by_probe = {
+        "a": [{"slug": "calendar", "displayName": "Calendar"}],
+        "e": [{"slug": "calendar", "displayName": "Calendar"}],  # duplicate
+        "i": [{"slug": "writer", "displayName": "Writer"}],
+        "o": [{"slug": "calendar", "displayName": "Calendar"}],  # duplicate
+        "u": [{"slug": "researcher", "displayName": "Researcher"}],
+    }
+
+    def fake_run(argv, profile=None):
+        probe = argv[-1]
+        return {"ok": True, "data": {"results": by_probe.get(probe, [])}}
+
+    monkeypatch.setattr(hub_mod, "run_openclaw", fake_run)
+    out = hub_mod.browse(plugin_version="0.1.0", query="")
+
+    names = {item["name"] for item in out["items"]}
+    assert names == {"calendar", "writer", "researcher"}
+    assert out["total"] == 3
+    # Alphabetical ordering by slug.
+    assert [it["name"] for it in out["items"]] == ["calendar", "researcher", "writer"]
+
+
+def test_query_uses_single_call(monkeypatch):
+    """Non-empty query path must make exactly one openclaw call —
+    no vowel fan-out when the user already typed something."""
+    calls: list[list[str]] = []
+
+    def fake_run(argv, profile=None):
+        calls.append(list(argv))
+        return {"ok": True, "data": {"results": []}}
+
+    monkeypatch.setattr(hub_mod, "run_openclaw", fake_run)
+    hub_mod.browse(plugin_version="0.1.0", query="calendar")
+    assert len(calls) == 1
+    assert calls[0][-1] == "calendar"
 
 
 def test_unexpected_shape_returns_error_envelope(monkeypatch):

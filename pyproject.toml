@@ -1,6 +1,6 @@
 [project]
 name = "openclaw-onepilot-skills"
-version = "0.1.0"
+version = "0.1.1"
 description = "Read-only skill discovery surface for the Onepilot iOS app on OpenClaw hosts."
 authors = [{ name = "Onepilot" }]
 license = { text = "MIT" }
