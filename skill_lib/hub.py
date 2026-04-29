@@ -91,11 +91,15 @@ def browse(
     if not isinstance(query, str):
         query = ""
 
-    # Fetch a wide window — `--limit` is the only knob OpenClaw exposes,
-    # so we ask for enough to cover the requested page plus headroom.
-    # `_MAX_FETCH` caps the total no matter how high `page * page_size`
-    # gets.
-    fetch_limit = min(_MAX_FETCH, page * page_size + page_size)
+    # Always fetch the full window — `--limit` is the only knob OpenClaw
+    # exposes, and varying it per-page (e.g. limit = page * page_size)
+    # makes `total_pages` shift as the user paginates, which renders as
+    # "Page 1 of 2" → "Page 2 of 3" jank. Asking for `_MAX_FETCH` every
+    # time pins `total_pages` to a stable number for the entire browse
+    # session. ClawHub's search payload is small (a few hundred KB at
+    # 2000 results) and OpenClaw caches it, so the cost is one slow
+    # first call and free thereafter.
+    fetch_limit = _MAX_FETCH
 
     argv = ["skills", "search", "--json", "--limit", str(fetch_limit)]
     if query:
