@@ -13,12 +13,21 @@ _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
-PLUGIN_VERSION = "0.1.1"
+PLUGIN_VERSION = "0.1.2"
 
 # Path-traversal defense: regex + segment scan in `_validate_name`.
-# Same shape as the Hermes plugin so the iOS adapter can reuse its
-# shell-quoting unchanged.
-_NAME_RE = re.compile(r"^[A-Za-z0-9_./\-]{1,200}$")
+# Mirrors the Hermes plugin so the iOS adapter's shell-quoting works
+# unchanged. We allow `\w` (Unicode-aware: letters/digits/underscore)
+# plus common punctuation that legitimate skill names contain — the
+# structural check below (no empty parts, no `..`, no `.`) is the
+# actual path-traversal guard.
+#
+# Real ClawHub slugs are kebab-case lowercase (e.g. `calendar-sync`),
+# but iOS may pass display names through here too, which can include
+# spaces, parens, etc. Subprocess invocation is argv-list shape (see
+# `skill_lib/openclaw.py`) so spaces are passed as a single argv token,
+# never interpolated into a shell command.
+_NAME_RE = re.compile(r"^[\w \-./()+&,'!:#]{1,200}$", re.UNICODE)
 # OpenClaw profile ids are tighter — no `/` or `.`. We forbid those even
 # though argparse would happily pass them, so a malformed profile id can
 # never reach the `openclaw` argv.

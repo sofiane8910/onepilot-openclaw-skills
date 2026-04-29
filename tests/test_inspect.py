@@ -63,6 +63,34 @@ def test_inspect_accepts_valid_slash_path(monkeypatch):
     assert out["error"] == "openclaw_not_found"
 
 
+def test_inspect_accepts_name_with_spaces(monkeypatch):
+    """Plugin >=0.1.2 accepts skill names with spaces (e.g. display
+    names like 'MD5 Tool'). Earlier regex rejected them as invalid."""
+    monkeypatch.setattr(
+        "skill_lib.inspect.run_openclaw",
+        lambda argv, profile=None: {"ok": False, "error": "openclaw_not_found"},
+    )
+    out = _run(["--mode", "inspect", "--name", "MD5 Tool"], monkeypatch)
+    # Name passes validation; subprocess wrapper then reports
+    # openclaw_not_found because no binary in test env.
+    assert out["error"] == "openclaw_not_found"
+
+
+def test_inspect_still_rejects_shell_metacharacters(monkeypatch):
+    """Relaxed regex must still keep dangerous chars out — even though
+    subprocess invocation is argv-list (so spaces are safe), we don't
+    want to widen the contract beyond what real names need."""
+    for bad in [
+        "name|cat /etc/passwd",
+        "name>/tmp/x",
+        "name`whoami`",
+        "name$(whoami)",
+        "name\\nwith newline",
+    ]:
+        out = _run(["--mode", "inspect", "--name", bad], monkeypatch)
+        assert out["error"] == "invalid_name", f"accepted dangerous: {bad!r}"
+
+
 def test_unknown_mode_rejected_by_argparse(monkeypatch):
     with pytest.raises(SystemExit) as excinfo:
         _run(["--mode", "wat"], monkeypatch)
@@ -71,14 +99,14 @@ def test_unknown_mode_rejected_by_argparse(monkeypatch):
 
 def test_envelope_always_includes_plugin_version(monkeypatch):
     out = _run(["--mode", "inspect", "--name", ""], monkeypatch)
-    assert out["plugin_version"] == "0.1.1"
+    assert out["plugin_version"] == "0.1.2"
 
     monkeypatch.setattr(
         "skill_lib.hub.run_openclaw",
         lambda argv, profile=None: {"ok": True, "data": {"results": []}},
     )
     out = _run(["--mode", "hub"], monkeypatch)
-    assert out["plugin_version"] == "0.1.1"
+    assert out["plugin_version"] == "0.1.2"
 
 
 def test_invalid_profile_treated_as_none(monkeypatch):
