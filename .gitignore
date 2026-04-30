@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .DS_Store
+
+# Internal contributor notes (best-practices doc, not for public eyes)
+CLAUDE.md
