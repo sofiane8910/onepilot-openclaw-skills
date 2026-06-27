@@ -30,11 +30,12 @@ from typing import Any
 
 from skill_lib.openclaw import run_openclaw
 
-# Cap the search window we fetch from OpenClaw in one call. We don't
-# want to ask for 100 000 results just because the user typoed page
-# 9999 — `_clamp_page` upstream already bounds the page index, but
-# this is the secondary belt-and-braces.
-_MAX_FETCH = 2000
+# Cap the search window we fetch from OpenClaw in one call. ClawHub's
+# `/api/v1/search` returns HTTP 500 for large limits (observed: 250 ok,
+# 500+ fails), so keep this at the largest value the endpoint reliably
+# serves. A higher cap makes every probe fail and the marketplace come
+# back empty. `_clamp_page` upstream bounds the page index separately.
+_MAX_FETCH = 250
 
 # When the user hasn't typed a query, we still want to surface every
 # ClawHub skill in the marketplace. Problem: OpenClaw's
@@ -151,33 +152,24 @@ def browse(
         probes = _BROWSE_PROBES
 
     aggregated: dict[str, dict[str, Any]] = {}
-    # Probes run concurrently, but results come back in probe order so the
-    # error-bail and dedup ("first probe wins") semantics are identical to
-    # the old sequential loop.
+    # Probes run concurrently. A single probe failing (e.g. a transient
+    # ClawHub 500) must NOT blank the whole marketplace — we keep the union
+    # of the probes that succeeded and only surface an error when EVERY
+    # probe failed. Results come back in probe order, so dedup stays
+    # "first probe wins".
+    ok_count = 0
+    last_error = "unknown"
     for result in _run_probes(probes, fetch_limit):
         if not result.get("ok"):
-            # Bail on transport failure; surface the error class so the
-            # iOS view shows the retry button.
-            return {
-                "plugin_version": plugin_version,
-                "items": [],
-                "page": page,
-                "total_pages": 1,
-                "total": 0,
-                "error": result.get("error", "unknown"),
-            }
+            last_error = result.get("error", "unknown")
+            continue
 
         data = result["data"]
         if not isinstance(data, dict):
-            return {
-                "plugin_version": plugin_version,
-                "items": [],
-                "page": page,
-                "total_pages": 1,
-                "total": 0,
-                "error": "unexpected_shape",
-            }
+            last_error = "unexpected_shape"
+            continue
 
+        ok_count += 1
         raw_results = data.get("results", [])
         if not isinstance(raw_results, list):
             raw_results = []
@@ -188,6 +180,18 @@ def browse(
             if not slug or slug in aggregated:
                 continue
             aggregated[slug] = translated
+
+    if ok_count == 0:
+        # Every probe failed; surface the error class so the iOS view
+        # shows the retry button.
+        return {
+            "plugin_version": plugin_version,
+            "items": [],
+            "page": page,
+            "total_pages": 1,
+            "total": 0,
+            "error": last_error,
+        }
 
     # Stable order: alphabetical by slug. Without this the page
     # contents shift as `_BROWSE_PROBES` is reordered or as the
