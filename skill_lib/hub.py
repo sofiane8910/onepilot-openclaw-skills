@@ -25,6 +25,7 @@ See SECURITY.md for invariants.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from skill_lib.openclaw import run_openclaw
@@ -43,9 +44,10 @@ _MAX_FETCH = 2000
 #
 # Workaround: probe with single-character vowel queries and union the
 # results. Every English skill name contains at least one vowel, so
-# this catches the entire ClawHub catalog. Each call hits OpenClaw's
-# in-process HTTP cache after the first, so 5 round-trips on a cold
-# search become free on subsequent pages.
+# this catches the entire ClawHub catalog. The probes are fired
+# concurrently (see `_run_probes`), so a cold browse costs ~1 round-trip
+# of wall-clock instead of 5 sequential ones; subsequent pages hit
+# OpenClaw's in-process HTTP cache and are free regardless.
 #
 # Long-term fix: OpenClaw should expose `listClawHubSkills`
 # (`/api/v1/skills`) as a CLI subcommand — see
@@ -96,6 +98,26 @@ def _translate_search_item(raw: Any) -> dict[str, Any]:
     }
 
 
+def _run_probes(probes: tuple[str, ...], fetch_limit: int) -> list[dict[str, Any]]:
+    """Fire one `skills search` per probe concurrently, preserving order.
+
+    Returns the `run_openclaw` envelopes in the same order as `probes`.
+    Each `run_openclaw` is a blocking subprocess wait that releases the
+    GIL, so a thread per probe overlaps the network latency — a cold
+    5-vowel browse drops from ~5x to ~1x wall-clock. A single probe (the
+    query path) still runs as exactly one call.
+    """
+    def _fetch(probe: str) -> dict[str, Any]:
+        argv = ["skills", "search", "--json", "--limit", str(fetch_limit), probe]
+        return run_openclaw(argv)
+
+    # `max_workers` bounded by probe count; the executor maps results back
+    # in submission order, so downstream dedup/error handling stays
+    # deterministic regardless of which probe finishes first.
+    with ThreadPoolExecutor(max_workers=len(probes)) as pool:
+        return list(pool.map(_fetch, probes))
+
+
 def browse(
     plugin_version: str,
     page: int = 1,
@@ -129,9 +151,10 @@ def browse(
         probes = _BROWSE_PROBES
 
     aggregated: dict[str, dict[str, Any]] = {}
-    for probe in probes:
-        argv = ["skills", "search", "--json", "--limit", str(fetch_limit), probe]
-        result = run_openclaw(argv)
+    # Probes run concurrently, but results come back in probe order so the
+    # error-bail and dedup ("first probe wins") semantics are identical to
+    # the old sequential loop.
+    for result in _run_probes(probes, fetch_limit):
         if not result.get("ok"):
             # Bail on transport failure; surface the error class so the
             # iOS view shows the retry button.

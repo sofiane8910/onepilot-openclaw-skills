@@ -98,15 +98,17 @@ def test_unknown_mode_rejected_by_argparse(monkeypatch):
 
 
 def test_envelope_always_includes_plugin_version(monkeypatch):
+    from skills_dump import PLUGIN_VERSION
+
     out = _run(["--mode", "inspect", "--name", ""], monkeypatch)
-    assert out["plugin_version"] == "0.1.2"
+    assert out["plugin_version"] == PLUGIN_VERSION
 
     monkeypatch.setattr(
         "skill_lib.hub.run_openclaw",
         lambda argv, profile=None: {"ok": True, "data": {"results": []}},
     )
     out = _run(["--mode", "hub"], monkeypatch)
-    assert out["plugin_version"] == "0.1.2"
+    assert out["plugin_version"] == PLUGIN_VERSION
 
 
 def test_invalid_profile_treated_as_none(monkeypatch):
