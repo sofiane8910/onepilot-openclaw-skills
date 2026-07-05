@@ -69,6 +69,7 @@ def _normalize_skill(raw: Any) -> Optional[dict[str, Any]]:
 def collect_installed(
     plugin_version: str,
     profile: Optional[str] = None,
+    state_dir: Optional[str] = None,
 ) -> dict[str, Any]:
     """Return the full `installed` envelope for the iOS app.
 
@@ -80,7 +81,7 @@ def collect_installed(
     Errors collapse to `{plugin_version, skills: [], count: 0,
     error: "<class>"}` — never raises.
     """
-    result = run_openclaw(["skills", "list", "--json"], profile=profile)
+    result = run_openclaw(["skills", "list", "--json"], profile=profile, state_dir=state_dir)
     if not result.get("ok"):
         return {
             "plugin_version": plugin_version,

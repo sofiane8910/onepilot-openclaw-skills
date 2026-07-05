@@ -13,7 +13,7 @@ _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
-PLUGIN_VERSION = "0.1.4"
+PLUGIN_VERSION = "0.1.5"
 
 # Path-traversal defense: regex + segment scan in `_validate_name`.
 # Mirrors the Hermes plugin so the iOS adapter's shell-quoting works
@@ -69,6 +69,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mode", choices=("installed", "hub", "inspect"), required=True)
     parser.add_argument("--name", type=str, default=None)
     parser.add_argument("--profile", type=str, default=None)
+    # Absolute state dir for a hand-rolled / default-home install (exported as
+    # OPENCLAW_STATE_DIR by the chokepoint; wins over --profile). Validation
+    # happens in `skill_lib.openclaw._validate_state_dir`.
+    parser.add_argument("--state-dir", dest="state_dir", type=str, default=None)
     parser.add_argument("--page", type=int, default=1)
     parser.add_argument("--page-size", dest="page_size", type=int, default=100)
     parser.add_argument("--query", type=str, default="")
@@ -78,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.mode == "installed":
             profile = _validate_profile(args.profile)
             from skill_lib.installed import collect_installed
-            return _emit(collect_installed(plugin_version=PLUGIN_VERSION, profile=profile))
+            return _emit(collect_installed(plugin_version=PLUGIN_VERSION, profile=profile, state_dir=args.state_dir))
 
         if args.mode == "hub":
             from skill_lib.hub import browse
@@ -95,7 +99,7 @@ def main(argv: list[str] | None = None) -> int:
                 return _emit(_error_envelope("invalid_name", skill=None))
             profile = _validate_profile(args.profile)
             from skill_lib.inspect import inspect
-            return _emit(inspect(plugin_version=PLUGIN_VERSION, name=validated, profile=profile))
+            return _emit(inspect(plugin_version=PLUGIN_VERSION, name=validated, profile=profile, state_dir=args.state_dir))
 
         return _emit(_error_envelope("unknown_mode"))
 

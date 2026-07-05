@@ -106,10 +106,32 @@ def _reset_cache_for_tests() -> None:
     _OPENCLAW_BIN = None
 
 
+def _validate_state_dir(raw: Optional[str]) -> Optional[str]:
+    """Validate an `OPENCLAW_STATE_DIR` value before it enters the child env.
+
+    Requires an absolute POSIX path (the iOS side expands `~`/`$HOME` to a
+    concrete path before sending it) with no NUL or newline and a sane length.
+    Returns the cleaned value, or None when absent/invalid. The value only ever
+    lands in a `subprocess` env dict — never a shell — so path characters are
+    safe; the checks here guard against env-splitting bytes and stray relatives.
+    """
+    if raw is None or not isinstance(raw, str):
+        return None
+    s = raw.strip()
+    if not s or len(s) > 4096:
+        return None
+    if "\x00" in s or "\n" in s or "\r" in s:
+        return None
+    if not s.startswith("/"):
+        return None
+    return s
+
+
 def run_openclaw(
     argv: list[str],
     *,
     profile: Optional[str] = None,
+    state_dir: Optional[str] = None,
 ) -> dict[str, Any]:
     """Invoke `openclaw [--profile <id>] <argv...>` and return parsed JSON.
 
@@ -121,19 +143,32 @@ def run_openclaw(
     `openclaw_unavailable`, `openclaw_output_too_large`, `invalid_json`,
     or the exception class name from a subprocess flake.
 
+    `state_dir` addresses a hand-rolled / default-home install directly:
+    when set, it's exported as `OPENCLAW_STATE_DIR` (which the OpenClaw CLI
+    honors over any `--profile`-derived path) and `--profile` is dropped.
+    The value is validated to an absolute path with no NUL/newline before it
+    ever reaches the child env — it is never interpolated into a shell.
+
     NEVER raises. Callers can rely on the dict shape unconditionally.
     """
     bin_path = _resolve_openclaw_bin()
     if bin_path is None:
         return {"ok": False, "error": "openclaw_not_found"}
 
+    # A home-rooted state dir wins over --profile (matches the OpenClaw CLI's
+    # `applyCliProfileEnv`, where a pre-set OPENCLAW_STATE_DIR is used as-is).
+    safe_state_dir = _validate_state_dir(state_dir)
+    if state_dir is not None and safe_state_dir is None:
+        return {"ok": False, "error": "invalid_state_dir"}
+
     # Build argv. `--profile <id>` goes BEFORE the subcommand to match
     # the OpenClaw CLI's option order. We never interpolate any of these
     # into a string — `subprocess.run([...], shell=False)` treats every
     # element as a separate argv, so quoting/injection is structurally
-    # impossible.
+    # impossible. When a state dir is supplied we drop --profile: the env
+    # var alone scopes the call, and mixing both is redundant.
     cmd: list[str] = [bin_path]
-    if profile is not None:
+    if profile is not None and safe_state_dir is None:
         cmd.extend(["--profile", profile])
     cmd.extend(argv)
 
@@ -141,11 +176,13 @@ def run_openclaw(
     # binaries it needs, e.g. node) and HOME (OpenClaw reads config from
     # `~/.openclaw/`). No other env vars inherited — nothing in
     # `~/.env`, nothing from secret managers, nothing from the SSH
-    # session.
+    # session. A validated OPENCLAW_STATE_DIR is the one allowed addition.
     child_env = {
         "PATH": _safe_path(),
         "HOME": str(_home()),
     }
+    if safe_state_dir is not None:
+        child_env["OPENCLAW_STATE_DIR"] = safe_state_dir
 
     try:
         result = subprocess.run(

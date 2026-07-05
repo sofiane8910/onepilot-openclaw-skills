@@ -46,7 +46,7 @@ def test_inspect_accepts_valid_short_name(monkeypatch):
     # validation-layer test.
     monkeypatch.setattr(
         "skill_lib.inspect.run_openclaw",
-        lambda argv, profile=None: {"ok": False, "error": "openclaw_not_found"},
+        lambda argv, profile=None, state_dir=None: {"ok": False, "error": "openclaw_not_found"},
     )
     out = _run(["--mode", "inspect", "--name", "writer"], monkeypatch)
     assert out["skill"] is None
@@ -56,7 +56,7 @@ def test_inspect_accepts_valid_short_name(monkeypatch):
 def test_inspect_accepts_valid_slash_path(monkeypatch):
     monkeypatch.setattr(
         "skill_lib.inspect.run_openclaw",
-        lambda argv, profile=None: {"ok": False, "error": "openclaw_not_found"},
+        lambda argv, profile=None, state_dir=None: {"ok": False, "error": "openclaw_not_found"},
     )
     out = _run(["--mode", "inspect", "--name", "anthropics/skills/skill-creator"], monkeypatch)
     assert out["skill"] is None
@@ -68,7 +68,7 @@ def test_inspect_accepts_name_with_spaces(monkeypatch):
     names like 'MD5 Tool'). Earlier regex rejected them as invalid."""
     monkeypatch.setattr(
         "skill_lib.inspect.run_openclaw",
-        lambda argv, profile=None: {"ok": False, "error": "openclaw_not_found"},
+        lambda argv, profile=None, state_dir=None: {"ok": False, "error": "openclaw_not_found"},
     )
     out = _run(["--mode", "inspect", "--name", "MD5 Tool"], monkeypatch)
     # Name passes validation; subprocess wrapper then reports
@@ -105,7 +105,7 @@ def test_envelope_always_includes_plugin_version(monkeypatch):
 
     monkeypatch.setattr(
         "skill_lib.hub.run_openclaw",
-        lambda argv, profile=None: {"ok": True, "data": {"results": []}},
+        lambda argv, profile=None, state_dir=None: {"ok": True, "data": {"results": []}},
     )
     out = _run(["--mode", "hub"], monkeypatch)
     assert out["plugin_version"] == PLUGIN_VERSION
@@ -115,7 +115,7 @@ def test_invalid_profile_treated_as_none(monkeypatch):
     """A malformed profile id never reaches run_openclaw."""
     seen = {}
 
-    def fake_run(argv, profile=None):
+    def fake_run(argv, profile=None, state_dir=None):
         seen["profile"] = profile
         return {"ok": True, "data": {"skills": []}}
 
@@ -128,7 +128,7 @@ def test_invalid_profile_treated_as_none(monkeypatch):
 def test_valid_profile_passes_through(monkeypatch):
     seen = {}
 
-    def fake_run(argv, profile=None):
+    def fake_run(argv, profile=None, state_dir=None):
         seen["profile"] = profile
         return {"ok": True, "data": {"skills": []}}
 
@@ -144,7 +144,7 @@ def test_inspect_returns_translated_detail(monkeypatch):
     monkeypatch.setattr(
         inspect_mod,
         "run_openclaw",
-        lambda argv, profile=None: {
+        lambda argv, profile=None, state_dir=None: {
             "ok": True,
             "data": {"name": "calendar", "description": "CalDAV", "tags": ["agent"]},
         },
@@ -168,7 +168,7 @@ def test_inspect_reads_skill_md_preview_when_location_present(tmp_path, monkeypa
     monkeypatch.setattr(
         inspect_mod,
         "run_openclaw",
-        lambda argv, profile=None: {
+        lambda argv, profile=None, state_dir=None: {
             "ok": True,
             "data": {"name": "calendar", "description": "CalDAV", "locationPath": str(skill_dir)},
         },
@@ -190,7 +190,7 @@ def test_inspect_rejects_symlinked_skill_md_escape(tmp_path, monkeypatch):
     monkeypatch.setattr(
         inspect_mod,
         "run_openclaw",
-        lambda argv, profile=None: {
+        lambda argv, profile=None, state_dir=None: {
             "ok": True,
             "data": {"name": "evil", "locationPath": str(skill_dir)},
         },
@@ -204,7 +204,7 @@ def test_inspect_handles_run_failure(monkeypatch):
     monkeypatch.setattr(
         inspect_mod,
         "run_openclaw",
-        lambda argv, profile=None: {"ok": False, "error": "openclaw_timeout"},
+        lambda argv, profile=None, state_dir=None: {"ok": False, "error": "openclaw_timeout"},
     )
     out = inspect_mod.inspect(plugin_version="0.1.0", name="anything")
     assert out["skill"] is None
@@ -216,7 +216,7 @@ def test_inspect_handles_null_data(monkeypatch):
     monkeypatch.setattr(
         inspect_mod,
         "run_openclaw",
-        lambda argv, profile=None: {"ok": True, "data": None},
+        lambda argv, profile=None, state_dir=None: {"ok": True, "data": None},
     )
     out = inspect_mod.inspect(plugin_version="0.1.0", name="ghost")
     assert out["skill"] is None

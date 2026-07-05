@@ -100,6 +100,7 @@ def inspect(
     plugin_version: str,
     name: str,
     profile: Optional[str] = None,
+    state_dir: Optional[str] = None,
 ) -> dict[str, Any]:
     """Return the `inspect` envelope for one ClawHub skill slug."""
     if not isinstance(name, str) or not name:
@@ -112,6 +113,7 @@ def inspect(
     result = run_openclaw(
         ["skills", "info", name, "--json"],
         profile=profile,
+        state_dir=state_dir,
     )
     if not result.get("ok"):
         return {

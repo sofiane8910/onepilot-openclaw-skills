@@ -11,7 +11,7 @@ def _stub_run(monkeypatch, payload: dict[str, Any]):
     monkeypatch.setattr(
         installed_mod,
         "run_openclaw",
-        lambda argv, profile=None: {"ok": True, "data": payload},
+        lambda argv, profile=None, state_dir=None: {"ok": True, "data": payload},
     )
 
 
@@ -19,7 +19,7 @@ def _stub_run_failure(monkeypatch, error: str):
     monkeypatch.setattr(
         installed_mod,
         "run_openclaw",
-        lambda argv, profile=None: {"ok": False, "error": error},
+        lambda argv, profile=None, state_dir=None: {"ok": False, "error": error},
     )
 
 
@@ -131,7 +131,7 @@ def test_unexpected_shape_returns_error_envelope(monkeypatch):
     monkeypatch.setattr(
         installed_mod,
         "run_openclaw",
-        lambda argv, profile=None: {"ok": True, "data": "not a dict"},
+        lambda argv, profile=None, state_dir=None: {"ok": True, "data": "not a dict"},
     )
     out = installed_mod.collect_installed(plugin_version="0.1.0")
     assert out["error"] == "unexpected_shape"
@@ -146,7 +146,7 @@ def test_envelope_always_carries_plugin_version(monkeypatch):
 def test_profile_passed_through_to_run_openclaw(monkeypatch):
     seen = {}
 
-    def fake_run(argv, profile=None):
+    def fake_run(argv, profile=None, state_dir=None):
         seen["argv"] = argv
         seen["profile"] = profile
         return {"ok": True, "data": {"skills": []}}

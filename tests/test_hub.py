@@ -109,7 +109,7 @@ def test_run_failure_returns_error_envelope(monkeypatch):
 def test_query_arg_is_appended_when_nonempty(monkeypatch):
     seen: dict = {}
 
-    def fake_run(argv, profile=None):
+    def fake_run(argv, profile=None, state_dir=None):
         seen["argv"] = argv
         return {"ok": True, "data": {"results": []}}
 
@@ -126,7 +126,7 @@ def test_empty_query_fans_out_vowel_probes(monkeypatch):
     /api/v1/search with q=`*`) returns 0 hits when no query is given."""
     calls: list[list[str]] = []
 
-    def fake_run(argv, profile=None):
+    def fake_run(argv, profile=None, state_dir=None):
         calls.append(list(argv))
         return {"ok": True, "data": {"results": []}}
 
@@ -151,7 +151,7 @@ def test_empty_query_dedupes_across_probes(monkeypatch):
         "u": [{"slug": "researcher", "displayName": "Researcher"}],
     }
 
-    def fake_run(argv, profile=None):
+    def fake_run(argv, profile=None, state_dir=None):
         probe = argv[-1]
         return {"ok": True, "data": {"results": by_probe.get(probe, [])}}
 
@@ -170,7 +170,7 @@ def test_query_uses_single_call(monkeypatch):
     no vowel fan-out when the user already typed something."""
     calls: list[list[str]] = []
 
-    def fake_run(argv, profile=None):
+    def fake_run(argv, profile=None, state_dir=None):
         calls.append(list(argv))
         return {"ok": True, "data": {"results": []}}
 

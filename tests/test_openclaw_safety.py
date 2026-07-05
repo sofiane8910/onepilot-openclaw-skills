@@ -73,6 +73,46 @@ def test_profile_argv_position(monkeypatch):
     assert cmd == ["/fake/openclaw", "--profile", "coder", "skills", "list", "--json"]
 
 
+def test_state_dir_sets_env_and_drops_profile(monkeypatch):
+    # A home-rooted state dir is exported as OPENCLAW_STATE_DIR and scopes the
+    # call on its own — no --profile in the argv.
+    monkeypatch.setattr(oc, "_resolve_openclaw_bin", lambda: "/fake/openclaw")
+    captured = _capture_run(monkeypatch)
+
+    oc.run_openclaw(["skills", "list", "--json"], state_dir="/home/u/.openclaw")
+
+    call = captured[0]
+    assert call["cmd"] == ["/fake/openclaw", "skills", "list", "--json"]
+    assert "--profile" not in call["cmd"]
+    assert call["env"]["OPENCLAW_STATE_DIR"] == "/home/u/.openclaw"
+    assert set(call["env"].keys()) == {"PATH", "HOME", "OPENCLAW_STATE_DIR"}
+
+
+def test_state_dir_wins_over_profile(monkeypatch):
+    # Belt-and-suspenders: even if both are passed, the state dir wins and
+    # --profile is dropped (matches the OpenClaw CLI's applyCliProfileEnv).
+    monkeypatch.setattr(oc, "_resolve_openclaw_bin", lambda: "/fake/openclaw")
+    captured = _capture_run(monkeypatch)
+
+    oc.run_openclaw(["skills", "list"], profile="coder", state_dir="/home/u/.openclaw")
+
+    call = captured[0]
+    assert "--profile" not in call["cmd"]
+    assert call["env"]["OPENCLAW_STATE_DIR"] == "/home/u/.openclaw"
+
+
+def test_invalid_state_dir_rejected_without_invoking_subprocess(monkeypatch):
+    monkeypatch.setattr(oc, "_resolve_openclaw_bin", lambda: "/fake/openclaw")
+    captured = _capture_run(monkeypatch)
+
+    # Relative path (not absolute), embedded newline, and NUL are all rejected
+    # before the child ever runs.
+    for bad in ("relative/path", "/home/u/.openclaw\nEVIL=1", "/home/\x00/x"):
+        out = oc.run_openclaw(["skills", "list"], state_dir=bad)
+        assert out == {"ok": False, "error": "invalid_state_dir"}
+    assert captured == []
+
+
 def test_missing_binary_returns_error_envelope_without_invoking_subprocess(monkeypatch):
     monkeypatch.setattr(oc, "_resolve_openclaw_bin", lambda: None)
     captured = _capture_run(monkeypatch)
